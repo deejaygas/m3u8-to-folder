@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ---------- CONFIG ----------
 PREFISSO_NUMERICO=true   # true = "001 - Titolo.mp3" (mantiene l'ordine della playlist)
 # ----------------------------
@@ -13,29 +12,33 @@ DEST=$(osascript -e 'try' \
                  -e 'POSIX path of (choose folder with prompt "Seleziona la cartella di destinazione")' \
                  -e 'end try')
 [ -z "$DEST" ] && exit 0
+DEST="${DEST%/}"   # normalizza: niente slash finale
 
 BASEDIR=$(dirname "$PLAYLIST")
-LOG="${DEST}_report_copia.txt"
+LOG="${DEST}/_report_copia.txt"
 : > "$LOG"
 
-urldecode() { local s="${1//+/ }"; printf '%b' "${s//%/\\x}"; }
+urldecode() { printf '%b' "${1//%/\\x}"; }   # niente conversione + -> spazio
+
+# conta le righe valide per calcolare la larghezza del prefisso
+TOTALE=$(grep -vc '^\s*#\|^\s*$' "$PLAYLIST")
+WIDTH=${#TOTALE}
+[ "$WIDTH" -lt 3 ] && WIDTH=3   # minimo 3 cifre come prima
 
 copiati=0
 mancanti=0
 n=0
 
 while IFS= read -r riga || [ -n "$riga" ]; do
-    riga="${riga%$'\r'}"                       # toglie CR se il file è CRLF
-    riga="${riga#"${riga%%[![:space:]]*}"}"    # trim iniziale
+    riga="${riga%$'\r'}"
+    riga="${riga#"${riga%%[![:space:]]*}"}"
     [ -z "$riga" ] && continue
     case "$riga" in \#*) continue ;; esac
 
-    # gestisce eventuali URL file://
     case "$riga" in
         file://*) riga=$(urldecode "${riga#file://}") ;;
     esac
 
-    # path relativo -> risolto rispetto alla posizione della playlist
     case "$riga" in
         /*) SRC="$riga" ;;
          *) SRC="$BASEDIR/$riga" ;;
@@ -51,16 +54,21 @@ while IFS= read -r riga || [ -n "$riga" ]; do
     fi
 
     if [ "$PREFISSO_NUMERICO" = true ]; then
-        TARGET=$(printf "%s%03d - %s" "$DEST" "$n" "$NOME")
+        TARGET=$(printf "%s/%0${WIDTH}d - %s" "$DEST" "$n" "$NOME")
     else
-        TARGET="${DEST}${NOME}"
+        TARGET="$DEST/$NOME"
     fi
 
     # evita sovrascritture: aggiunge _1, _2...
     if [ -e "$TARGET" ]; then
-        BASE="${TARGET%.*}"; EXT="${TARGET##*.}"; i=1
-        while [ -e "${BASE}_${i}.${EXT}" ]; do i=$((i+1)); done
-        TARGET="${BASE}_${i}.${EXT}"
+        if [[ "$TARGET" == *.* ]]; then
+            BASE="${TARGET%.*}"; EXT=".${TARGET##*.}"
+        else
+            BASE="$TARGET"; EXT=""
+        fi
+        i=1
+        while [ -e "${BASE}_${i}${EXT}" ]; do i=$((i+1)); done
+        TARGET="${BASE}_${i}${EXT}"
     fi
 
     if cp -p "$SRC" "$TARGET" 2>>"$LOG"; then
@@ -73,9 +81,7 @@ while IFS= read -r riga || [ -n "$riga" ]; do
 done < "$PLAYLIST"
 
 osascript -e "display dialog \"Copia completata.
-
 Brani in playlist: $n
 Copiati: $copiati
 Non trovati / errori: $mancanti
-
 Report: $(basename "$LOG")\" buttons {\"OK\"} default button 1 with title \"Copia da M3U8\""
