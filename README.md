@@ -1,65 +1,78 @@
-# Copia da M3U8
+# Copia Brani da Playlist M3U8
 
-Script bash per macOS che copia in una cartella di destinazione tutti i file audio elencati in una playlist `.m3u8`/`.m3u`, generando un report testuale di quali brani sono stati copiati, quali mancano e quali hanno dato errore.
+Script bash (pensato per macOS + Automator) che legge una playlist `.m3u8`/`.m3u` e copia tutti i brani elencati in una cartella di destinazione, con report finale degli errori.
 
 ## Cosa fa
 
-1. Chiede di selezionare un file `.m3u8` o `.m3u` (dialog "Seleziona il file .m3u8").
-2. Chiede di selezionare la cartella di destinazione in cui copiare i brani.
-3. Legge riga per riga la playlist, ignorando righe vuote e righe che iniziano con `#` (tag `#EXTM3U`, `#EXTINF`, ecc.).
-4. Per ogni brano:
-   - decodifica eventuali URL `file://` (percent-encoding incluso, es. spazi come `%20`)
-   - risolve i path **relativi** rispetto alla cartella in cui si trova il file `.m3u8` (i path assoluti restano invariati)
-   - se il file non esiste, lo segna come mancante nel report
-   - se esiste, lo copia nella cartella di destinazione preservando i metadati del file (`cp -p`)
-5. Se `PREFISSO_NUMERICO=true` (impostazione di default), antepone al nome del file un numero progressivo a 3 cifre (`001 - `, `002 - `, ...) corrispondente alla posizione nella playlist, così l'ordine originale resta visibile anche nel Finder.
-6. Evita di sovrascrivere file già esistenti con lo stesso nome nella destinazione: aggiunge automaticamente un suffisso `_1`, `_2`, ecc.
-7. Scrive un report testuale (`<cartella_destinazione>_report_copia.txt`) con l'esito di ogni brano (`OK`, `MANCANTE`, `ERRORE COPIA`).
-8. Al termine mostra un dialog di riepilogo con il numero totale di brani, quanti copiati e quanti non trovati/in errore.
+1. Chiede di selezionare il file playlist (`.m3u8` o `.m3u`).
+2. Chiede di selezionare la cartella di destinazione.
+3. Legge riga per riga la playlist, risolve i path (assoluti, relativi o `file://`) e copia ogni brano nella cartella scelta.
+4. Se `PREFISSO_NUMERICO=true`, rinomina i file con un numero progressivo iniziale (es. `001 - Titolo.mp3`) per mantenere l'ordine della playlist.
+5. Evita di sovrascrivere file già esistenti: se un nome è già presente, aggiunge `_1`, `_2`, ecc.
+6. Scrive un report (`_report_copia.txt`) nella cartella di destinazione con l'elenco di brani copiati, mancanti o con errori.
+7. Al termine mostra un riepilogo in una finestra di dialogo.
+
+## Requisiti
+
+- macOS (usa `osascript`/AppleScript per le finestre di selezione file/cartella e il dialogo finale).
+- Bash (già presente su macOS).
+
+## Come usarlo
+
+### Opzione A — Da Terminale
+
+1. Salva lo script, ad esempio come `copia_playlist.sh`.
+2. Rendilo eseguibile:
+   ```bash
+   chmod +x copia_playlist.sh
+   ```
+3. Eseguilo:
+   ```bash
+   ./copia_playlist.sh
+   ```
+4. Segui le finestre che appaiono: prima seleziona il file `.m3u8`/`.m3u`, poi la cartella di destinazione.
+
+### Opzione B — Come app Automator (doppio click)
+
+1. Apri **Automator** → nuovo documento → tipo **Applicazione**.
+2. Aggiungi l'azione **Esegui script Shell**.
+3. Incolla il contenuto dello script.
+4. Salva come app (es. `CopiaPlaylist.app`).
+5. Da quel momento basta un doppio click sull'app per lanciarlo: si apriranno le finestre di selezione file/cartella come da Terminale.
 
 ## Configurazione
 
 In cima allo script:
 
 ```bash
-PREFISSO_NUMERICO=true   # true = "001 - Titolo.mp3" (mantiene l'ordine della playlist)
-                         # false = copia i file con il nome originale, senza prefisso
+PREFISSO_NUMERICO=true
 ```
 
-## Requisiti
+- `true` → i file copiati vengono rinominati con un prefisso numerico (`001 - `, `002 - `, ...) basato sull'ordine nella playlist. Utile per mantenere l'ordine di ascolto originale quando si copiano i brani su una chiavetta USB, un lettore MP3, ecc.
+- `false` → i file vengono copiati con il nome originale, senza prefisso.
 
-- **macOS** (usa `osascript` per i dialog di selezione file/cartella e per il riepilogo finale)
-- Bash (preinstallato di sistema)
-- Un file `.m3u8`/`.m3u` con percorsi assoluti, relativi o in formato `file://`
+## Come vengono risolti i path nella playlist
 
-## Utilizzo
+Lo script gestisce tre casi per ogni riga della playlist:
 
-```bash
-chmod +x copia_da_m3u8.sh
-./copia_da_m3u8.sh
-```
+- **Path assoluto** (es. `/Users/nome/Musica/brano.mp3`) → usato così com'è.
+- **Path relativo** (es. `Musica/brano.mp3`) → risolto rispetto alla cartella in cui si trova il file playlist.
+- **URI `file://`** (es. `file:///Users/nome/Musica/brano.mp3`) → decodificato (inclusi eventuali caratteri percent-encoded come `%20` per lo spazio) e trattato come path assoluto.
 
-1. Seleziona il file `.m3u8`/`.m3u` da usare come sorgente.
-2. Seleziona la cartella dove copiare i brani.
-3. Attendi il completamento (nessun output a schermo durante la copia; tutto viene registrato nel report).
-4. Alla fine appare un dialog con il riepilogo: brani totali, copiati, non trovati/errori, e il nome del file di report.
+Le righe vuote e quelle che iniziano con `#` (commenti/metadati M3U) vengono ignorate.
 
-Se si annulla una delle due selezioni (file o cartella), lo script termina senza fare nulla.
+## Il report finale
 
-## Output
+Al termine trovi nella cartella di destinazione un file `_report_copia.txt` con una riga per ogni brano elaborato:
 
-- I file audio copiati nella cartella di destinazione scelta, con nome:
-  - `NNN - NomeOriginale.ext` se `PREFISSO_NUMERICO=true` (dove `NNN` è la posizione a 3 cifre nella playlist)
-  - `NomeOriginale.ext` se `PREFISSO_NUMERICO=false`
-- Un file di report `<nome_cartella_destinazione>_report_copia.txt`, salvato **accanto** alla cartella di destinazione (non al suo interno), con una riga per ogni brano elencato nella playlist:
-  - `OK: nomefile` — copiato con successo
-  - `MANCANTE: percorso` — file sorgente non trovato
-  - `ERRORE COPIA: percorso` — file trovato ma la copia (`cp`) ha restituito un errore
+- `OK: nomefile.mp3` → copiato con successo.
+- `MANCANTE: /path/al/file.mp3` → il file indicato nella playlist non esiste più in quel percorso.
+- `ERRORE COPIA: /path/al/file.mp3` → il file esiste ma la copia è fallita (permessi, spazio su disco, ecc.), con il relativo messaggio d'errore di `cp`.
 
-## Note e limiti
+Il dialogo finale riassume: numero totale di brani nella playlist, quanti copiati con successo, quanti mancanti/con errore.
 
-- Il nome del file di report è costruito come `"${DEST}_report_copia.txt"`: poiché `DEST` termina tipicamente con `/` (il comportamento standard di "choose folder" in AppleScript), il file di report finisce per essere creato **fuori** dalla cartella di destinazione, con un nome tipo `NomeCartella_report_copia.txt` nella cartella genitore. Tienilo presente se ti aspetti il report dentro la cartella copiata.
-- Il prefisso numerico riflette **l'ordine dei brani nella playlist**, non un eventuale numero di traccia nei metadati del file audio.
-- La prevenzione delle sovrascritture si basa solo sul nome file di destinazione: se due brani diversi della playlist generano lo stesso nome (es. stesso titolo file), verranno comunque copiati entrambi ma con suffissi `_1`, `_2`, ecc.
-- Righe che iniziano con `#` vengono sempre ignorate come commenti/tag, anche se in teoria potrebbero contenere informazioni utili (es. `#EXTINF`) che qui non vengono usate.
-- Non c'è validazione sul tipo di file: qualunque percorso elencato nella playlist (anche non audio) verrebbe copiato allo stesso modo.
+## Note
+
+- Se un brano manca o dà errore, lo script **non si interrompe**: continua con i successivi e segnala tutto nel report.
+- Se rilanci lo script sulla stessa cartella di destinazione, i file già copiati **non vengono sovrascritti**: verranno creati con suffisso `_1`, `_2`, ecc.
+- Con più di 999 brani in playlist, la larghezza del prefisso numerico si adatta automaticamente (es. 4 cifre per playlist da 1000+ brani).
